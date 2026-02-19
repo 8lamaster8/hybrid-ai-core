@@ -1,0 +1,62 @@
+priority_domains:
+  - ru.wikipedia.org
+  - en.wikipedia.org
+  - habr.com
+  - nplus1.ru
+  - elementy.ru
+  - postnauka.ru
+  - tproger.ru
+  - arxiv.org
+  - science.org
+  - nature.com
+  - plato.stanford.edu   # Стэнфордская энциклопедия философии
+  - iep.utm.edu          # Internet Encyclopedia of Philosophy
+  - sciencedirect.com
+  - springer.com
+  - philpapers.org
+
+low_trust_domains:
+  - livejournal.com
+  - blogspot.com
+  - medium.com
+  - vc.ru
+  - dtf.ru
+  - pikabu.ru
+  - yaplakal.com
+  - fishki.net
+  - adme.ru
+  - life.ru
+  - rambler.ru
+  - mail.ru
+  - ok.ru
+  - vk.com
+  - teletype.in
+
+ad_indicators:
+  - "реклама"
+  - "партнёрский материал"
+  - "спонсорский пост"
+  - "на правах рекламы"
+  - "advertisement"
+  - "sponsored"
+
+junk_phrases:
+  - "архивная копия"
+  - "wayback machine"
+  - "↑"
+  - "источник:"
+  - "дата обращения:"
+  - "архивировано"
+  - "автор оригинала"
+  - "лицензия creative commons"
+  - "эта страница в последний раз"
+  - "у этого термина существуют и другие значения"
+  - "см. также"
+  - "примечания"
+  - "ссылки"
+  - "литература"
+  - "фото:"
+  - "©"
+  - "getty images"
+  - "reuters"
+  - "ap"

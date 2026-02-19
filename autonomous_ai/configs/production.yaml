@@ -1,0 +1,128 @@
+# Production конфигурация для Autonomous AI Pro
+
+detective:
+  search_engine: "duckduckgo"
+  max_pages_per_topic: 25
+  max_results_per_page: 20
+  min_content_length: 3000
+  max_content_length: 100000
+  timeout: 45
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  retry_attempts: 3
+  delay_between_requests: 1.0
+  concurrent_searches: 5
+  blacklist_domains:
+    - "facebook.com"
+    - "twitter.com"
+    - "instagram.com"
+    - "tiktok.com"
+    - "pinterest.com"
+  priority_domains:
+    - "wikipedia.org"
+    - "habr.com"
+    - "rbc.ru"
+    - "vc.ru"
+    - "science.org"
+    - "arxiv.org"
+    - "ru.wikipedia.org"
+    - "en.wikipedia.org"
+    - "nplus1.ru"
+    - "elementy.ru"
+    - "postnauka.ru"
+    - "tproger.ru"
+    - "nature.com"
+    - "plato.stanford.edu"
+    - "iep.utm.edu"
+    - "sciencedirect.com"
+    - "springer.com"
+    - "philpapers.org"
+
+committee:
+  min_relevance_score: 0.6
+  min_quality_score: 0.65
+  min_uniqueness_score: 0.5
+  blocked_keywords:
+    - "архивная копия"
+    - "спам"
+    - "реклама"
+    - "купить сейчас"
+  max_text_similarity: 0.85
+  enable_embedding_check: true
+  embedding_threshold: 0.75
+  min_sentences: 3
+  max_sentence_length: 200
+  language: "ru"
+
+analyst:
+  chunk_size: 1500
+  chunk_overlap: 300
+  min_chunk_length: 500
+  max_chunks_per_document: 50
+  extraction_strategy: "semantic"
+  enable_summarization: true
+  summary_length: 300
+  enable_entity_extraction: true
+  enable_relation_extraction: true
+  language: "ru"
+  min_confidence: 0.6
+  max_entities_per_chunk: 10
+  # Модель GLiNER2 (мультиязычная, рекомендуется для русского)
+  ner_model: "fastino/gliner2-base-v1"
+  # Для английского можно использовать large:
+  # ner_model: "fastino/gliner2-large-v1"
+
+storage:
+  chroma_path: "./data/chroma"
+  graph_path: "./data/graphs/knowledge_graph.db"
+  engram_path: "./data/engram/engram.db"
+  cache_path: "./data/cache"
+  max_chroma_records: 1000000
+  max_engram_records: 500000
+  auto_save: true
+  save_interval: 300
+  backup_enabled: true
+  backup_interval: 3600
+
+embedding:
+  model_name: "BAAI/bge-m3"
+  model_path: "./models/bge-m3"
+  device: "cpu"
+  normalize_embeddings: true
+  cache_dir: "./data/cache/embeddings"
+  max_cache_size: 10000
+  batch_size: 32
+  embedding_dimension: 768
+
+coordinator:
+  max_concurrent_tasks: 10
+  task_timeout: 400
+  retry_failed_tasks: true
+  max_retries: 2
+  enable_priority_queue: true
+  monitoring_interval: 30
+  auto_save_interval: 400
+  max_queue_size: 1000
+  num_workers: 5
+
+# Системные настройки
+log_level: "INFO"
+log_file: "./data/logs/autonomous_ai.log"
+max_log_size: 10485760
+backup_count: 5
+data_dir: "./data"
+models_dir: "./models"
+configs_dir: "./configs"
+enable_profiling: false
+profile_output: "./data/profiling"
+memory_limit_mb: 4096
+cpu_limit: 4
+enable_rate_limiting: true
+requests_per_minute: 60
+max_content_size_mb: 10
+
+# Дополнительные параметры для интервьюера
+max_questions_per_topic: 15
+question_depth_levels: 3
+enable_followup_questions: true
+question_types: ["factual", "comparative", "causal", "procedural"]
+min_question_quality: 0.6

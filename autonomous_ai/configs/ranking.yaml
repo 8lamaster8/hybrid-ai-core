@@ -1,0 +1,50 @@
+profiles:
+  default:
+    weights:
+      relevance: 0.4
+      domain_credit: 0.15
+      position: 0.1
+      ner: 0.2
+      length: 0.05
+      definition_causal: 0.1
+      uniqueness_penalty: -0.2
+    length_optimal: 100
+    length_steepness: 0.1
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  factoid:
+    weights:
+      ner: 0.4
+      relevance: 0.3
+      domain_credit: 0.2
+      position: 0.05
+      length: 0.03
+      definition_causal: 0.02
+      uniqueness_penalty: -0.15
+    # остальные параметры наследуются из default
+
+  how_why:
+    weights:
+      definition_causal: 0.4
+      relevance: 0.3
+      domain_credit: 0.15
+      position: 0.1
+      ner: 0.05
+      length: 0.0
+      uniqueness_penalty: -0.1
+
+  evaluation:
+    weights:
+      relevance: 0.5
+      domain_credit: 0.25
+      ner: 0.1
+      definition_causal: 0.1
+      position: 0.05
+      length: 0.0
+      uniqueness_penalty: -0.1
+
+domain_credit:
+  priority: 1.0
+  neutral: 0.6
+  low: 0.3

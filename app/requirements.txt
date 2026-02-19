@@ -1,0 +1,58 @@
+# Core
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy==2.0.23
+asyncpg==0.29.0
+alembic==1.12.1
+psycopg2-binary==2.9.9  # для синхронных операций
+
+# Vector Store
+chromadb==0.4.22
+
+# AI/ML
+sentence-transformers==2.2.2
+torch==2.1.0  # или torch==2.1.0+cpu для CPU
+numpy==1.24.3
+
+# Cache & Queue
+redis==5.0.1
+
+# Monitoring & System
+prometheus-client==0.19.0
+psutil==5.9.6
+grafana-api==1.0.0
+
+# Logging
+structlog==23.2.0
+
+# Files & Uploads
+python-multipart==0.0.6
+aiofiles==23.2.1
+python-magic==0.4.27
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+slowapi==0.1.9  # rate limiting
+
+# Utils
+httpx==0.25.1
+ujson==5.8.0  # быстрый JSON
+orjson==3.9.10  # ещё быстрее JSON
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+factory-boy==3.3.0
+
+# Code Quality
+flake8==6.1.0
+black==23.11.0
+isort==5.12.0
+mypy==1.7.0
