@@ -135,7 +135,7 @@ class KnowledgeAnalyst:
             # 1. Извлекаем чанки из документов
             all_chunks = []
             for doc in documents:
-                doc_result = await self._process_document(doc)
+                doc_result = await self._process_document(doc, is_discovery=is_discovery)
                 all_chunks.extend(doc_result.get('chunks', []))
 
             unique_chunks = self._deduplicate_chunks(all_chunks)
@@ -308,7 +308,7 @@ class KnowledgeAnalyst:
                 # --- Фильтрация ---
                 if is_discovery:
                     # Мягкие условия для discovery
-                    if len(sent) < 20:
+                    if len(sent) < 15:               # было 20, теперь 15
                         continue
                     if re.search(r'[{}\[\]<>]', sent) and len(re.findall(r'[{}\[\]<>]', sent)) > 5:
                         continue
@@ -830,7 +830,7 @@ class KnowledgeAnalyst:
         
         return min(confidence, 1.0)
 
-    async def _process_document(self, doc: Dict) -> Dict:
+    async def _process_document(self, doc: Dict, is_discovery: bool = False) -> Dict:
         """Обработка одного документа."""
         content = doc.get('content', '')
         if not content:
@@ -845,8 +845,13 @@ class KnowledgeAnalyst:
             chunk['total_chunks'] = total_chunks
             chunk['quality_score'] = self._evaluate_chunk_quality(chunk['text'])
 
-        chunks = [c for c in chunks if c['quality_score'] >= 0.5]
-        chunks = chunks[:self.max_chunks_per_document]
+        # В режиме обучения снижаем порог качества, чтобы не терять короткие параграфы
+        quality_threshold = 0.2 if is_discovery else 0.5
+        chunks = [c for c in chunks if c['quality_score'] >= quality_threshold]
+
+        # В режиме обучения разрешаем больше чанков на документ
+        max_chunks = self.max_chunks_per_document * 2 if is_discovery else self.max_chunks_per_document
+        chunks = chunks[:max_chunks]
 
         return {'chunks': chunks}
 

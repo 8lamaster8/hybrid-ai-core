@@ -17,7 +17,7 @@ JSON_FORMAT = '%(asctime)s %(levelname)s %(name)s %(message)s'  # можно з�
 # Уровни логирования
 LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
-    'INFO': logging.INFO,
+    'INFO': logging.INFO, #info,WARNING
     'WARNING': logging.WARNING,
     'ERROR': logging.ERROR,
     'CRITICAL': logging.CRITICAL

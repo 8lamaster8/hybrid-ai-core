@@ -117,10 +117,10 @@ learning:
     maintenance: 0.03
   intervals:
     discovery: 300             #3600                  # 1 час
-    deepening: 600            #7200                  # 2 часа
-    expansion: 900            #14400                 # 4 часа
-    meta_analysis: 1200        #86400              # 24 часа
-    maintenance: 1800           #43200                # 12 часов
+    deepening: 900            #7200                  # 2 часа
+    expansion: 1500            #14400                 # 4 часа
+    meta_analysis: 2000        #86400              # 24 часа
+    maintenance: 2800           #43200                # 12 часов
   cycles:
     discovery:
       min_topics: 1

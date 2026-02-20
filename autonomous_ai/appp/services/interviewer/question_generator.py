@@ -292,48 +292,46 @@ class QuestionGenerator:
         """
         Генерация углубляющих вопросов на основе уже полученных знаний.
         Используется в циклах координат.
-        
-        Args:
-            knowledge_chunks: Результаты предыдущего цикла (ответы на вопросы)
-            current_depth: Текущая глубина
-            max_questions: Максимальное количество вопросов
-            
-        Returns:
-            Список новых вопросов для углубления
         """
         if not knowledge_chunks:
             return []
-        
-        # Анализируем ответы, ищем ключевые термины
+
         all_text = ' '.join([
-            chunk.get('answer', '') or chunk.get('text', '') 
+            chunk.get('answer', '') or chunk.get('text', '')
             for chunk in knowledge_chunks
         ])
-        
-        # Извлекаем потенциальные темы для углубления
-        # (простейшая эвристика: ищем слова с большой буквы, длинные термины)
+
+        # Простейшая эвристика: ищем слова с большой буквы или длинные термины
         words = all_text.split()
         candidates = []
-        
+
+        # Стоп-слова, которые не должны быть кандидатами
+        stopwords = {'это', 'что', 'как', 'так', 'когда', 'где', 'кто', 'какой',
+                    'также', 'очень', 'сам', 'весь', 'мой', 'твой', 'наш', 'ваш',
+                    'свой', 'весь', 'эти', 'этой', 'этого', 'которые', 'который'}
+
         for word in words:
-            # Существительные с большой буквы (кроме начала предложения)
-            if word[0].isupper() and len(word) > 3:
-                if word not in candidates and not self._is_stop_word(word):
-                    candidates.append(word)
-        
-        # Если кандидатов мало, берем любые длинные слова
+            word_clean = word.strip('.,!?;:()[]{}«»"')
+            if len(word_clean) < 5:
+                continue
+            if not word_clean[0].isupper() and len(word_clean) < 7:
+                continue
+            if word_clean.lower() in stopwords:
+                continue
+            if not word_clean.isalpha():
+                continue
+            candidates.append(word_clean)
+
+        # Если кандидатов мало, берём любые длинные слова
         if len(candidates) < 3:
-            long_words = [w for w in words if len(w) > 6 and w.isalpha()]
+            long_words = [w for w in words if len(w) > 5 and w.isalpha()]
             candidates.extend(long_words)
-        
+
         # Удаляем дубликаты и ограничиваем
-        candidates = list(dict.fromkeys(candidates))[:5]
-        
-        # Генерируем вопросы для каждого кандидата
+        candidates = list(dict.fromkeys(candidates))[:max_questions]
+
         deepening_questions = []
-        
         for candidate in candidates:
-            # В зависимости от глубины, задаем разные типы вопросов
             if current_depth == 0:
                 q = f"Что такое {candidate}?"
             elif current_depth == 1:
@@ -342,12 +340,12 @@ class QuestionGenerator:
                 q = f"Какие существуют разновидности {candidate}?"
             else:
                 q = f"Каковы перспективы развития {candidate}?"
-            
             deepening_questions.append(q)
-            
-            if len(deepening_questions) >= max_questions:
-                break
-        
+
+        # Если не нашли ни одного кандидата, возвращаем общий вопрос
+        if not deepening_questions:
+            deepening_questions = [f"Подробнее о {knowledge_chunks[0].get('topic', 'теме')}"]
+
         return deepening_questions[:max_questions]
     
     async def generate_followup_questions(
