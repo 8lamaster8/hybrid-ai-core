@@ -67,6 +67,7 @@ class AnalystConfig:
     language: str = "ru"
     min_confidence: float = 0.6
     max_entities_per_chunk: int = 10
+    ner_model: Optional[str] = None
 
 
 @dataclass
@@ -112,6 +113,35 @@ class CoordinatorConfig:
 
 
 @dataclass
+class LearningConfig:
+    """Конфигурация самообучения"""
+    enabled: bool = True
+    check_interval: int = 60
+    priorities: dict = field(default_factory=lambda: {
+        'discovery': 0.4,
+        'deepening': 0.3,
+        'expansion': 0.2,
+        'meta_analysis': 0.07,
+        'maintenance': 0.03
+    })
+    intervals: dict = field(default_factory=lambda: {
+        'discovery': 3600,
+        'deepening': 7200,
+        'expansion': 14400,
+        'meta_analysis': 86400,
+        'maintenance': 43200
+    })
+    cycles: dict = field(default_factory=lambda: {
+        'discovery': {'min_topics': 1, 'max_topics': 3},
+        'deepening': {'depth': 2},
+        'expansion': {},
+        'meta': {},
+        'maintenance': {}
+    })
+
+
+
+@dataclass
 class SystemConfig:
     """Основная конфигурация системы"""
     detective: DetectiveConfig = field(default_factory=DetectiveConfig)
@@ -120,6 +150,7 @@ class SystemConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
     coordinator: CoordinatorConfig = field(default_factory=CoordinatorConfig)
+    learning: LearningConfig = field(default_factory=LearningConfig)
     
     # Настройки системы
     log_level: str = "INFO"
@@ -186,6 +217,9 @@ class Config:
             storage=StorageConfig(**config_dict.get('storage', {})),
             embedding=EmbeddingConfig(**config_dict.get('embedding', {})),
             coordinator=CoordinatorConfig(**config_dict.get('coordinator', {})),
+
+            learning=LearningConfig(**config_dict.get('learning', {})),
+
             log_level=config_dict.get('log_level', 'INFO'),
             log_file=config_dict.get('log_file', './data/logs/autonomous_ai.log'),
             max_log_size=config_dict.get('max_log_size', 10485760),

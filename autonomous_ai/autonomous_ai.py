@@ -34,6 +34,7 @@ from appp.core.logging import logger
 
 # Coordination
 from appp.coordination.service_coordinator import ServiceCoordinator, get_coordinator
+from appp.coordination.learning_coordinator import LearningCycleCoordinator, get_learning_coordinator
 from appp.utils.response_templates import RESPONSE_TEMPLATES, format_rich_response
 
 
@@ -53,6 +54,8 @@ class AutonomousAIPro:
         self.graph_db = None
         self.engram = None
         self.embedder = None
+        self.learning_coordinator = None
+        self.learning_task = None
 
         self.is_initialized = False
         self.is_running = False
@@ -66,6 +69,10 @@ class AutonomousAIPro:
         }
 
         logger.info("🤖 AutonomousAIPro инициализирован")
+
+    # ----- Асинхронный ввод (чтобы не блокировать event loop) -----
+    async def ainput(self, prompt: str = "") -> str:
+        return await asyncio.to_thread(input, prompt)
 
     async def initialize(self):
         """Инициализация всех компонентов"""
@@ -205,7 +212,7 @@ class AutonomousAIPro:
             self.analyst = KnowledgeAnalyst(analyst_config)
             await self.analyst.initialize()
 
-            # 6. Интервьюер
+            # 6. Интервьюер (с передачей graph_db для получения связанных тем)
             logger.info("6/8 🎤 Инициализация интервьюера...")
             interviewer_config = {
                 'max_questions_per_topic': getattr(self.config, 'max_questions_per_topic', 15),
@@ -215,7 +222,7 @@ class AutonomousAIPro:
                 'min_question_quality': getattr(self.config, 'min_question_quality', 0.6),
                 'language': self.config.committee.language
             }
-            self.interviewer = QuestionGenerator(interviewer_config)
+            self.interviewer = QuestionGenerator(interviewer_config, graph_db=self.graph_db)
             await self.interviewer.initialize()
 
             # 7. Координатор сервисов
@@ -232,6 +239,52 @@ class AutonomousAIPro:
                 embedder=self.embedder
             )
             await self.coordinator.initialize()
+
+            # 8. Координатор самообучения
+            logger.info("8/8 🧠 Инициализация координатора самообучения...")
+            if self.config.learning.enabled:
+                # Формируем словарь сервисов для циклов
+                learning_services = {
+                    'detective': self.detective,
+                    'committee': self.committee,
+                    'analyst': self.analyst,
+                    'interviewer': self.interviewer,
+                    'chroma_db': self.chroma_db,
+                    'graph_db': self.graph_db,
+                    'engram': self.engram,
+                    'embedder': self.embedder
+                }
+
+                # Конфигурация для циклов (берём из self.config.learning)
+                learning_config = {
+                    'enabled': self.config.learning.enabled,
+                    'check_interval': self.config.learning.check_interval,
+                    'priorities': self.config.learning.priorities,
+                    'intervals': self.config.learning.intervals,
+                    'cycles': self.config.learning.cycles
+                }
+
+                self.learning_coordinator = LearningCycleCoordinator(learning_services, learning_config)
+
+                # Запускаем фоновую задачу
+                self.learning_task = asyncio.create_task(
+                    self.learning_coordinator.start(),
+                    name="learning_coordinator"
+                )
+
+                # Добавляем callback для отслеживания ошибок
+                def learning_task_done(task):
+                    try:
+                        task.result()
+                    except asyncio.CancelledError:
+                        logger.info("Learning task was cancelled")
+                    except Exception as e:
+                        logger.error(f"❌ Learning task crashed: {e}", exc_info=True)
+
+                self.learning_task.add_done_callback(learning_task_done)
+                logger.info("   ✅ Координатор самообучения запущен")
+            else:
+                logger.info("   ⚠️ Самообучение отключено в конфигурации")
 
             self.is_initialized = True
             self.session_stats['start_time'] = datetime.now()
@@ -257,7 +310,7 @@ class AutonomousAIPro:
         }
         task_id = await self.coordinator.submit_task(task_data)
 
-        timeout = self.config.coordinator.task_timeout  # 300 секунд по умолчанию
+        timeout = self.config.coordinator.task_timeout
         start_wait = time.time()
         while time.time() - start_wait < timeout:
             await asyncio.sleep(0.5)
@@ -298,17 +351,25 @@ class AutonomousAIPro:
         return {'error': 'Таймаут исследования'}
 
     async def self_learn(self) -> dict:
+        """Ручной запуск одного цикла самообучения (случайный тип)."""
         self.session_stats['learning_cycles'] += 1
-        task_data = {
-            'type': 'self_learning',
-            'priority': 2
-        }
-        task_id = await self.coordinator.submit_task(task_data)
+        if not self.learning_coordinator:
+            return {'error': 'Самообучение не инициализировано'}
+
+        import random
+        cycle_type = random.choice(list(self.learning_coordinator.cycles.keys()))
+        result = await self.learning_coordinator.run_cycle(cycle_type)
         return {
             'success': True,
-            'message': 'Задача самообучения запущена',
-            'task_id': task_id
+            'message': f'Запущен цикл {cycle_type.value}',
+            'result': result
         }
+
+    async def get_learning_stats(self) -> dict:
+        """Возвращает статистику самообучения."""
+        if self.learning_coordinator:
+            return self.learning_coordinator.get_stats()
+        return {'enabled': False, 'message': 'Learning coordinator not running'}
 
     async def get_system_status(self) -> dict:
         if not self.is_initialized:
@@ -330,6 +391,9 @@ class AutonomousAIPro:
             'engram': await self.engram.get_stats() if self.engram else {},
             'embedder': await self.embedder.get_metrics() if self.embedder else {}
         }
+        # Добавляем статистику самообучения, если есть
+        if self.learning_coordinator:
+            status['learning'] = self.learning_coordinator.get_stats()
         return status
 
     # ---------- Интерактивный режим ----------
@@ -341,7 +405,8 @@ class AutonomousAIPro:
         print("   • вопрос <текст>     - задать вопрос")
         print("   • исследовать <тема> - глубокое исследование")
         print("   • цикл <тема>        - исследование с циклами координат")
-        print("   • обучиться          - запустить самообучение")
+        print("   • обучиться          - запустить самообучение (один цикл)")
+        print("   • статус_обучения    - статистика самообучения")
         print("   • статус             - состояние системы")
         print("   • статистика         - подробная статистика")
         print("   • выход              - завершение работы")
@@ -349,7 +414,10 @@ class AutonomousAIPro:
 
         while True:
             try:
-                user_input = input("\n🎯 > ").strip()
+                # Даём небольшую паузу, чтобы фоновые задачи могли выполниться перед вводом
+                await asyncio.sleep(0.1)
+                user_input = (await self.ainput("\n🎯 > ")).strip()
+
                 if not user_input:
                     continue
                 if user_input.lower() in ['выход', 'exit', 'quit', 'q']:
@@ -364,7 +432,14 @@ class AutonomousAIPro:
                 elif user_input.lower() in ['обучиться', 'обучение', 'learn']:
                     print("🧠 Запуск самообучения...")
                     result = await self.self_learn()
-                    print(f"✅ Задача создана: {result.get('task_id')}")
+                    print(f"✅ {result.get('message')}")
+                    if 'result' in result:
+                        print(f"Результат: {result['result']}")
+                elif user_input.lower() in ['статус_обучения', 'learning_stats']:
+                    stats = await self.get_learning_stats()
+                    print("\n📊 Статистика самообучения:")
+                    for key, val in stats.items():
+                        print(f"   {key}: {val}")
                 elif user_input.lower().startswith('вопрос '):
                     question = user_input[7:].strip()
                     if question:
@@ -410,13 +485,10 @@ class AutonomousAIPro:
         key_facts_metadata = result.get('key_facts_metadata', [])
         query = result.get('query', '')
 
-        # Импортируем шаблоны здесь, чтобы избежать циклического импорта
         from appp.utils.response_templates import RESPONSE_TEMPLATES, format_rich_response
 
-        # Пробуем использовать шаблон, если профиль определён и есть метаданные
         if profile and key_facts_metadata and profile in RESPONSE_TEMPLATES:
             try:
-                # Подготавливаем данные через аналитика
                 template_data = self.analyst._prepare_template_data(profile, key_facts_metadata, query)
                 logger.info(f"PROFILE: {profile}, METADATA COUNT: {len(key_facts_metadata)}")
                 formatted = format_rich_response(profile, template_data)
@@ -426,13 +498,10 @@ class AutonomousAIPro:
                 print(f"\n{formatted}\n")
             except Exception as e:
                 logger.error(f"Ошибка шаблонного форматирования: {e}", exc_info=True)
-                # fallback на старый формат
                 self._display_fallback_answer(result)
         else:
-            # --- СТАРЫЙ ФОРМАТ (СПИСОК ФАКТОВ) ---
             self._display_fallback_answer(result)
 
-        # --- ОБЩАЯ ИНФОРМАЦИЯ (уверенность, время, источники) ---
         if 'confidence' in result:
             print(f"📊 Уверенность: {result['confidence']:.1%}")
         if 'processing_time' in result:
@@ -444,7 +513,6 @@ class AutonomousAIPro:
         print("\n" + "✅" * 40)
 
     def _display_fallback_answer(self, result: dict):
-        """Старый формат — список фактов"""
         print("\n" + "✅" * 40)
         print(f"🤖 ОТВЕТ (источник: {result.get('source', 'unknown')})")
         print("✅" * 40)
@@ -517,6 +585,13 @@ class AutonomousAIPro:
         print(f"\n🧠 Engram память:")
         print(f"   • Записей: {engram.get('total_records', 0)}")
         print(f"   • Хиты: {engram.get('hit_rate', 0):.1%}")
+        if 'learning' in status:
+            learning = status['learning']
+            print(f"\n🧠 Самообучение:")
+            print(f"   • Включено: {learning.get('enabled', False)}")
+            print(f"   • Выполнений: {learning.get('total_executions', 0)}")
+            for cycle, stats in learning.get('cycle_stats', {}).items():
+                print(f"      {cycle}: выполнено {stats.get('executions', 0)}")
         print("\n" + "📊" * 40)
 
     def _display_detailed_stats(self, status: dict):
@@ -537,6 +612,14 @@ class AutonomousAIPro:
 
     async def cleanup(self):
         logger.info("🛑 Завершение работы системы...")
+        if self.learning_task:
+            self.learning_task.cancel()
+            try:
+                await self.learning_task
+            except asyncio.CancelledError:
+                pass
+        if self.learning_coordinator:
+            self.learning_coordinator.stop()
         if self.coordinator:
             await self.coordinator.shutdown()
         if self.chroma_db:

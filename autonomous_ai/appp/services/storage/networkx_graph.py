@@ -505,14 +505,14 @@ class NetworkXGraphService:
             logger.error(f"Ошибка в get_related_nodes: {e}")
             return []
 
-    async def get_weak_topics(self, min_connections: int = 2, limit: int = 5) -> List[str]:
+    async def get_weak_topics(self, min_connections: int = 2, limit: int = 5, max_failures: int = 3) -> List[str]:
         """
-        Поиск слабо изученных тем (мало связей).
-        Для самообучения.
+        Поиск слабо изученных тем (мало связей) с учётом количества неудачных попыток.
         
         Args:
             min_connections: Минимальное количество связей для сильной темы
             limit: Максимальное количество возвращаемых тем
+            max_failures: Максимальное допустимое количество неудачных попыток (темы с большим числом пропускаются)
         
         Returns:
             Список названий слабых тем
@@ -534,21 +534,73 @@ class NetworkXGraphService:
                         else:
                             continue
                     
-                    if degree < min_connections:
+                    # Получаем количество неудачных попыток
+                    failed = attrs.get('failed_attempts', 0)
+                    
+                    if degree < min_connections and failed < max_failures:
                         weak.append({
                             'name': name,
                             'connections': degree,
-                            'node': node
+                            'node': node,
+                            'failed': failed
                         })
+                    else:
+                        logger.debug(f"Тема {name} пропущена: связи={degree}, неудач={failed}")
             
             # Сортируем по возрастанию связей (самые слабые первые)
             weak.sort(key=lambda x: x['connections'])
             
-            return [w['name'] for w in weak[:limit]]
+            result = [w['name'] for w in weak[:limit]]
+            logger.info(f"📊 Найдено слабых тем: {len(result)}")
+            return result
             
         except Exception as e:
             logger.error(f"Ошибка в get_weak_topics: {e}")
             return []
+
+
+    async def get_all_topics(self) -> List[str]:
+        """
+        Возвращает список всех названий тем в графе.
+        Используется циклами обучения (deepening, expansion).
+        """
+        topics = []
+        for node, attrs in self.graph.nodes(data=True):
+            if attrs.get('type') == 'topic':
+                name = attrs.get('name', '')
+                if not name and node.startswith('topic_'):
+                    name = node[6:]  # извлечь из идентификатора
+                if name:
+                    topics.append(name)
+        return topics
+
+    async def increment_failed_attempts(self, topic: str) -> int:
+        """Увеличивает счётчик неудачных попыток изучения темы и возвращает новое значение."""
+        topic_id = f"topic_{topic}"
+        if self.graph.has_node(topic_id):
+            current = self.graph.nodes[topic_id].get('failed_attempts', 0)
+            new_value = current + 1
+            self.graph.nodes[topic_id]['failed_attempts'] = new_value
+            self.dirty = True
+            logger.debug(f"❌ Тема '{topic}' получила {new_value}-ю неудачу")
+            
+            # Опционально: удалить тему после 5 неудач
+            if new_value >= 5:
+                self.graph.remove_node(topic_id)
+                logger.info(f"🗑️ Тема '{topic}' удалена из графа из-за 5 неудач")
+                self.dirty = True
+            
+            return new_value
+        return 0
+
+    async def get_failed_attempts(self, topic: str) -> int:
+        """Возвращает количество неудачных попыток для темы."""
+        topic_id = f"topic_{topic}"
+        if self.graph.has_node(topic_id):
+            return self.graph.nodes[topic_id].get('failed_attempts', 0)
+        return 0
+
+
 
     async def get_old_topics(self, days_threshold: int = 7, limit: int = 5) -> List[str]:
         """

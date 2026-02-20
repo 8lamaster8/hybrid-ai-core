@@ -104,6 +104,35 @@ coordinator:
   max_queue_size: 1000
   num_workers: 5
 
+
+# learning_coordinator settings
+learning:
+  enabled: true                     # включить/выключить самообучение
+  check_interval: 60                # сек между проверками готовности циклов
+  priorities:
+    discovery: 0.40
+    deepening: 0.30
+    expansion: 0.20
+    meta_analysis: 0.07
+    maintenance: 0.03
+  intervals:
+    discovery: 300             #3600                  # 1 час
+    deepening: 600            #7200                  # 2 часа
+    expansion: 900            #14400                 # 4 часа
+    meta_analysis: 1200        #86400              # 24 часа
+    maintenance: 1800           #43200                # 12 часов
+  cycles:
+    discovery:
+      min_topics: 1
+      max_topics: 3
+    deepening:
+      depth: 2
+    expansion: {}
+    meta: {}
+    maintenance: {}
+
+
+
 # Системные настройки
 log_level: "INFO"
 log_file: "./data/logs/autonomous_ai.log"

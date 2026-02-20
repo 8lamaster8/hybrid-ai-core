@@ -111,12 +111,12 @@ class KnowledgeAnalyst:
     # ----------------------------------------------------------------------
     # ОСНОВНОЙ МЕТОД АНАЛИЗА (с глобальной дедупликацией)
     # ----------------------------------------------------------------------
-    async def analyze(self, documents: List[Dict], query: str = "") -> Dict[str, Any]:
+    async def analyze(self, documents: List[Dict], query: str = "", is_discovery: bool = False) -> Dict[str, Any]:
         """
         Анализ документов:
         - извлечение чанков
         - выделение фактов с метаданными
-        - СЕМАНТИЧЕСКАЯ ДЕДУПЛИКАЦИЯ
+        - СЕМАНТИЧЕСКАЯ ДЕДУПЛИКАЦИЯ (кроме discovery)
         - ранжирование через RankingService
         - опциональная суммаризация
         - улучшенный расчёт уверенности
@@ -141,20 +141,21 @@ class KnowledgeAnalyst:
             unique_chunks = self._deduplicate_chunks(all_chunks)
             logger.info(f"   ✅ Уникальных чанков: {len(unique_chunks)}")
 
-            # 2. Извлекаем факты
+            # 2. Извлекаем факты (передаём is_discovery)
             fact_objects = await self._extract_key_facts(
                 chunks=unique_chunks,
                 query=query,
-                top_k=50
+                top_k=50,
+                is_discovery=is_discovery
             )
             logger.info(f"   ✅ Извлечено фактов ДО дедупликации: {len(fact_objects)}")
 
-            # 3. Семантическая дедупликация
-            if len(fact_objects) > 10 and SENTENCE_TRANSFORMERS_AVAILABLE:
+            # 3. Семантическая дедупликация (только если не discovery)
+            if not is_discovery and len(fact_objects) > 10 and SENTENCE_TRANSFORMERS_AVAILABLE:
                 fact_objects = await self._semantic_deduplication(fact_objects, threshold=0.85)
                 logger.info(f"   ✅ После семантической дедупликации: {len(fact_objects)} фактов")
 
-            # 4. Ранжирование
+            # 4. Ранжирование (всегда)
             if fact_objects:
                 profile_name = self._detect_query_profile(query)
                 facts_for_ranking = []
@@ -272,7 +273,8 @@ class KnowledgeAnalyst:
         self,
         chunks: List[Dict],
         query: str,
-        top_k: int = 50
+        top_k: int = 50,
+        is_discovery: bool = False
     ) -> List[Dict]:
         """Извлекает факты из чанков и обогащает их метаданными."""
         if not chunks:
@@ -281,7 +283,7 @@ class KnowledgeAnalyst:
         # Ключевые слова из запроса (для базового скоринга)
         keywords = [w.lower() for w in re.findall(r'\b\w{4,}\b', query)
                     if w.lower() not in {'когда','что','как','где','почему','зачем',
-                                         'какой','какая','какие','кто'}]
+                                        'какой','какая','какие','кто'}]
 
         all_facts = []
         junk_phrases = self._get_junk_phrases()
@@ -301,46 +303,57 @@ class KnowledgeAnalyst:
 
             for sent in sentences:
                 sent = sent.strip()
-                
-                # Усиленная фильтрация
                 sent_lower = sent.lower()
                 
-                if len(sent) < 40:
-                    continue
-                if re.search(r'[{}\[\]<>]', sent) and len(re.findall(r'[{}\[\]<>]', sent)) > 3:
-                    continue
-                alpha_ratio = sum(c.isalpha() for c in sent) / len(sent)
-                if alpha_ratio < 0.5:
-                    continue
-                if sent[0].islower() and len(sent) < 100:
-                    if not any(word in sent_lower for word in ['является', 'был', 'была', 'были', 'есть', 'имеет', 'можно', 'нужно']):
+                # --- Фильтрация ---
+                if is_discovery:
+                    # Мягкие условия для discovery
+                    if len(sent) < 20:
                         continue
-                words = sent.split()
-                if len(words) < 5:
-                    continue
-                long_words = [w for w in words if len(w) > 3]
-                if len(long_words) < 2:
-                    continue
-                if any(phrase in sent_lower for phrase in junk_phrases):
-                    continue
-                if sent.startswith(('[[', ']]', '{{', '}}', '==', '*', '#', '|', ';', ':', '^')):
-                    continue
-                if re.search(r'https?://|www\.', sent):
-                    continue
-                if re.match(r'^[А-ЯA-Z][^.]*:', sent):
-                    continue
-                if re.match(r'^[^—]{1,30} —', sent):
-                    continue
-                if re.match(r'^[IVX]+\.|^[A-ZА-Я]\.', sent):
-                    continue
-                if len(words) >= 3:
-                    capitalized = sum(1 for w in words[1:] if w and w[0].isupper())
-                    if capitalized / max(len(words)-1, 1) > 0.5:
+                    if re.search(r'[{}\[\]<>]', sent) and len(re.findall(r'[{}\[\]<>]', sent)) > 5:
                         continue
-                if sent[-1] not in {'.', '!', '?'}:
-                    continue
+                    if any(phrase in sent_lower for phrase in junk_phrases):
+                        continue
+                    if re.search(r'https?://|www\.', sent):
+                        continue
+                else:
+                    # Жёсткие условия для обычных вопросов
+                    if len(sent) < 40:
+                        continue
+                    if re.search(r'[{}\[\]<>]', sent) and len(re.findall(r'[{}\[\]<>]', sent)) > 3:
+                        continue
+                    alpha_ratio = sum(c.isalpha() for c in sent) / len(sent)
+                    if alpha_ratio < 0.5:
+                        continue
+                    if sent[0].islower() and len(sent) < 100:
+                        if not any(word in sent_lower for word in ['является', 'был', 'была', 'были', 'есть', 'имеет', 'можно', 'нужно']):
+                            continue
+                    words = sent.split()
+                    if len(words) < 5:
+                        continue
+                    long_words = [w for w in words if len(w) > 3]
+                    if len(long_words) < 2:
+                        continue
+                    if any(phrase in sent_lower for phrase in junk_phrases):
+                        continue
+                    if sent.startswith(('[[', ']]', '{{', '}}', '==', '*', '#', '|', ';', ':', '^')):
+                        continue
+                    if re.search(r'https?://|www\.', sent):
+                        continue
+                    if re.match(r'^[А-ЯA-Z][^.]*:', sent):
+                        continue
+                    if re.match(r'^[^—]{1,30} —', sent):
+                        continue
+                    if re.match(r'^[IVX]+\.|^[A-ZА-Я]\.', sent):
+                        continue
+                    if len(words) >= 3:
+                        capitalized = sum(1 for w in words[1:] if w and w[0].isupper())
+                        if capitalized / max(len(words)-1, 1) > 0.5:
+                            continue
+                    if sent[-1] not in {'.', '!', '?'}:
+                        continue
 
-                # --- Вычисляем признаки ---
+                # --- Вычисляем признаки (одинаково для обоих режимов) ---
                 ner_score, ner_types = await self._compute_ner_features(sent, query)
                 length = len(sent)
                 contains_definition = bool(re.search(r'—| это | является |определяет', sent))
@@ -373,7 +386,7 @@ class KnowledgeAnalyst:
                 }
                 all_facts.append(fact_entry)
 
-        # Дедупликация по тексту
+        # Дедупликация по тексту (всегда)
         unique_facts = self._deduplicate_facts_by_text(all_facts)
 
         # Сортировка по total_score

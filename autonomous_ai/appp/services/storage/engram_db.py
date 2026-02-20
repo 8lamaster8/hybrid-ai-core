@@ -226,6 +226,10 @@ class EngramService:
             'cache_size': len(self.cache),
             'max_records': self.max_records
         }
+
+    async def get_all_keys(self) -> List[str]:
+        """Возвращает список всех ключей (тем) в Engram."""
+        return list(self.cache.keys())
     
     async def close(self):
         """Завершение работы"""

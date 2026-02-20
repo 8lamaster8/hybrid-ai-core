@@ -17,8 +17,10 @@ class QuestionGenerator:
     Поддерживает разные типы вопросов и уровни глубины.
     """
     
-    def __init__(self, config: Dict):
+    def __init__(self, config: Dict, graph_db: Optional[Any] = None):
         self.config = config
+
+        self.graph_db = graph_db
         
         self.max_questions_per_topic = config.get('max_questions_per_topic', 15)
         self.question_depth_levels = config.get('question_depth_levels', 3)
@@ -254,7 +256,9 @@ class QuestionGenerator:
     
     async def _get_related_topics(self, topic: str, max_topics: int = 3) -> List[str]:
         try:
-            graph = coordinator.services.get('graph_db')
+            graph = self.graph_db
+            if graph is None:
+                return []
             
             # Получаем связанные темы с весами
             related = []
