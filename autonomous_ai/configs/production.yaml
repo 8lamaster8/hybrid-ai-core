@@ -107,7 +107,7 @@ coordinator:
 
 # learning_coordinator settings
 learning:
-  enabled: true                     # включить/выключить самообучение
+  enabled: false                     # включить/выключить самообучение
   check_interval: 60                # сек между проверками готовности циклов
   priorities:
     discovery: 0.40

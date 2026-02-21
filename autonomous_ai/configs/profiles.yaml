@@ -1,0 +1,79 @@
+# Профили для NER-определения типа запроса
+profiles:
+  scientific_concept:
+    labels:
+      - "Scientific Law"
+      - "Quantum Phenomenon"
+      - "Hypothesis"
+      - "Chemical Compound"
+      - "Scientist"
+    weight: 15.0
+  quantum_physics_deep:
+    labels:
+      - "Quantum Phenomenon"
+      - "Scientific Law"
+      - "Physicist"
+    weight: 14.0
+  philosophical_concept:
+    labels:
+      - "Philosophical Doctrine"
+      - "Subjective Experience"
+      - "Thinker"
+      - "Ontological Term"
+    weight: 15.0
+  mathematical_theorem:
+    labels:
+      - "Mathematical Theorem"
+      - "Axiom"
+      - "Mathematical Notation"
+      - "Formula"
+    weight: 14.0
+  biological_system:
+    labels:
+      - "Biological Mechanism"
+      - "Anatomical Structure"
+      - "Process"
+      - "Species"
+    weight: 13.0
+  programming_concept:
+    labels:
+      - "Programming Language"
+      - "Algorithm"
+      - "Framework"
+      - "Library"
+    weight: 11.0
+
+# Базовые сущности (всегда используются)
+base_mapping:
+  person: 10.0
+  PER: 10.0
+  location: 8.0
+  LOC: 8.0
+  organization: 8.0
+  ORG: 8.0
+  event: 7.0
+  date: 5.0
+  DATE: 5.0
+
+# Регулярные выражения для определения профиля (fallback)
+regex_patterns:
+  philosophical_concept:
+    - "философ|сознан|квалиа|субъективн|онтолог|эпистем|феноменолог|бытие|смысл|этик[а]|интенциональност|ницше|кант|хайдеггер|априорн"
+  quantum_physics_deep:
+    - "квантов[аяи]|декогеренц|суперпозиц|шредер|вигнер|волновой\\s+функц|корпускуляр|неопределенност|гамильтониан|кхд|струн|эйнштейн"
+  mathematical_theorem:
+    - "теорем[аы]|пифагор|эйлер|ферма|гильберт|аксиом[аы]|формул[аы]|интеграл|производн|дифференц|логарифм|число\\s+пи"
+  biological_system:
+    - "биологи[яи]|генет|синап|нейрон|эволюц|днк|рнк|симбиоз|транскрипц|белок|фермент|митохондр"
+  programming_concept:
+    - "программир|язык\\s+программир|функц[ия]|класс|алгоритм|библиотек[аи]|python|java|c\\+\\+|javascript|фреймворк|нейросеть|обучение\\s+модели"
+  scientific_concept:
+    - "физик[а]|хими[я]|космос|астрон|теори[я]|закон|принцип|гипотез[а]|парадокс|эффект|реакция"
+  historical_event:
+    - "истори[яи]|событи[ея]|войн[аы]|революц[ия]|биографи[яи]|родился|умер|году|век[а]|империя|царь|король"
+  factoid:
+    - "\\bкто\\b|\\bгде\\b|\\bкогда\\b|\\bчто такое\\b"
+  how_why:
+    - "\\bкак\\b|\\bпочему\\b|\\bзачем\\b|\\bпричина\\b"
+  evaluation:
+    - "\\bлучше\\b|\\bхуже\\b|\\bстоит ли\\b|\\bсравнить\\b|\\bотличие\\b"

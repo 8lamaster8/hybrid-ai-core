@@ -682,6 +682,9 @@ class ServiceCoordinator:
                         'answer': mem[0]['content'],
                         'confidence': mem[0]['confidence'],
                         'sources': ['🧠 Engram'],
+                        'profile': 'default',
+                        'key_facts_metadata': [],
+                        'query': question,
                         'processing_time': 0.1
                     }
             except Exception as e:
@@ -701,12 +704,12 @@ class ServiceCoordinator:
             if not search_result.get('success') or not search_result.get('results'):
                 return {'success': False, 'error': 'Нет результатов поиска'}
 
-            # 2.2 Фильтрация
+            # 2.2 Фильтрация комитетом
             filtered = await committee.batch_evaluate(search_result['results'][:10])
             if not filtered:
                 return {'success': False, 'error': 'Все результаты отбракованы'}
 
-            # 2.3 Приоритеты (только русская вики, хабр, научпоп)
+            # 2.3 Приоритеты доменов
             priority_domains = ['ru.wikipedia.org', 'habr.com', 'postnauka.ru', 'nplus1.ru', 'elementy.ru']
             trash_domains = [
                 'otvet.mail.ru', 'answer.mail.ru', 'bolshoyvopros.ru',
@@ -757,82 +760,37 @@ class ServiceCoordinator:
                         'title': page.get('title', ''),
                         'content': page.get('content', ''),
                     })
-                
-                # Анализ — получаем только факты (summary пустой)
+
+                # Анализ
                 analysis = await analyst.analyze(analyst_docs, query=question)
-                key_points = analysis.get('key_points', [])
-                confidence = analysis.get('confidence', 0.5)
-                sources = [page['url'] for page in valid_pages[:3]]
-                
+                # analysis содержит: profile, key_facts_metadata, confidence, key_points, summary и т.д.
 
-
-                 # ----- ЧИСТЫЙ ОТВЕТ: ТОЛЬКО ФАКТЫ, БЕЗ SUMMARY -----
-                formatted_answer = ""
-                
-                if key_points:
-                    # Финальная чистка мусора
-                    junk_phrases = [
-                        'фото:', '©', 'getty images', 'reuters', 'ap',
-                        'материал из википедии', 'стабильная версия',
-                        'перейти к навигации', 'перейти к поиску',
-                        'категория:', 'шаблон:', 'эта страница в последний раз',
-                        'у этого термина существуют и другие значения'
-                    ]
-                    
-                    clean_points = []
-                    seen = set()
-                    
-                    for point in key_points:
-                        point = point.strip()
-                        if len(point) < 20:
-                            continue
-                        point_lower = point.lower()
-                        if any(junk in point_lower for junk in junk_phrases):
-                            continue
-                        norm = point[:80].lower()
-                        if norm in seen:
-                            continue
-                        seen.add(norm)
-                        clean_points.append(point)
-                        if len(clean_points) >= 15:
-                            break
-                    
-                    if clean_points:
-                        formatted_answer += "**Основные факты:**\n"
-                        for i, point in enumerate(clean_points, 1):
-                            point = re.sub(r'^\d+\.\s*', '', point)
-                            formatted_answer += f"{i}. {point}\n"
-                    else:
-                        formatted_answer = "Не найдено конкретных фактов."
-                else:
-                    formatted_answer = "Не удалось извлечь информацию."
-                # ------------------------------------------------
-
-                # Сохраняем в Engram
-                if confidence > 0.5 and len(formatted_answer) > 100:
+                # Сохраняем в Engram (если высокое качество)
+                if analysis.get('confidence', 0) > 0.5 and analysis.get('key_points'):
                     if engram:
                         try:
+                            content = '\n'.join(analysis['key_points'][:5])
                             await engram.store(
                                 key=question,
-                                content=formatted_answer,
+                                content=content,
                                 metadata={
                                     'source': 'detective',
-                                    'confidence': 1.0,
-                                    'sources': sources
+                                    'confidence': analysis['confidence'],
+                                    'sources': [page['url'] for page in valid_pages[:3]]
                                 },
-                                confidence=1.0
+                                confidence=analysis['confidence']
                             )
                         except Exception as e:
                             logger.error(f"Engram store error: {e}")
 
-                # --- СОХРАНЕНИЕ В ГРАФ (добавлено) ---
-                if key_points and confidence > 0.6:
+                # --- СОХРАНЕНИЕ В ГРАФ ---
+                if analysis.get('key_points') and analysis.get('confidence', 0) > 0.6:
                     clean_topic = question.strip().rstrip('?').strip()[:100]
                     if clean_topic:
                         analysis_for_graph = {
-                            'summary': key_points[0] if key_points else '',
-                            'key_points': key_points,
-                            'confidence': confidence
+                            'summary': analysis.get('key_points', [''])[0],
+                            'key_points': analysis['key_points'],
+                            'confidence': analysis['confidence']
                         }
                         await self._store_knowledge(clean_topic, analysis_for_graph)
                         logger.info(f"📌 Результат вопроса сохранён в граф по теме '{clean_topic}'")
@@ -841,11 +799,12 @@ class ServiceCoordinator:
                 return {
                     'success': True,
                     'source': 'detective',
-                    'answer': formatted_answer,
-                    'confidence': confidence,
-                    'sources': sources,
+                    # поле 'answer' не заполняем, оно будет сформировано через шаблон в autonomous_ai.py
+                    'confidence': analysis.get('confidence', 0.5),
+                    'sources': [page['url'] for page in valid_pages[:3]],
                     'profile': analysis.get('profile', 'default'),
                     'key_facts_metadata': analysis.get('key_facts_metadata', []),
+                    'key_points': analysis.get('key_points', []),
                     'query': question,
                     'processing_time': time.time() - start
                 }
@@ -860,6 +819,7 @@ class ServiceCoordinator:
                     'sources': [d.get('url', '') for d in filtered[:3]],
                     'profile': 'default',
                     'key_facts_metadata': [],
+                    'key_points': [],
                     'query': question,
                     'processing_time': time.time() - start
                 }

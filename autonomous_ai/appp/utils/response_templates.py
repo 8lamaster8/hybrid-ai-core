@@ -2,6 +2,9 @@
 Шаблоны для богатых, персонализированных ответов
 """
 
+import re
+import logging
+
 RESPONSE_TEMPLATES = {
     'mathematical_theorem': {
         'structure': [
@@ -80,6 +83,31 @@ RESPONSE_TEMPLATES = {
             "{alternatives}"
         ]
     },
+    'quantum_physics_deep': {
+        'structure': [
+            "## 🔬 {concept_name}",
+            "",
+            "### 📋 Научное определение",
+            "{scientific_definition}",
+            "",
+            "### ⚙️ Основные принципы",
+            "{principles}",
+            "",
+            "### 📐 Математическое описание",
+            "```",
+            "{mathematical_description}",
+            "```",
+            "",
+            "### 🔬 Экспериментальные подтверждения",
+            "{experimental_evidence}",
+            "",
+            "### 💡 Области применения",
+            "{application_domains}",
+            "",
+            "### 📊 Современное состояние",
+            "{current_state}"
+        ]
+    },
     'scientific_concept': {
         'structure': [
             "## 🔬 {concept_name}",
@@ -115,8 +143,8 @@ RESPONSE_TEMPLATES = {
             "### 📋 Основные факты",
             "{bullet_points}",
             "",
-            #"### 🔗 Источники",
-            #"{sources}"
+            "### 🔗 Источники",
+            "{sources}"
         ]
     },
     'how_why': {
@@ -173,52 +201,45 @@ RESPONSE_TEMPLATES = {
 def format_rich_response(template_type: str, data: dict) -> str:
     """
     Форматирует ответ по шаблону с обработкой списков.
+    Если запрошенный шаблон не найден, используется 'default'.
     """
     template = RESPONSE_TEMPLATES.get(template_type)
     if not template:
+        # Если шаблон не найден, пробуем использовать 'default'
+        template = RESPONSE_TEMPLATES.get('default')
+    if not template:
         return data.get('default_answer', '')
 
-    response_lines = []
-    
-    for line in template['structure']:
-        import re
-        placeholders = re.findall(r'\{(\w+)\}', line)
-        
-        if placeholders:
-            formatted_line = line
-            for placeholder in placeholders:
-                value = data.get(placeholder, '')
-                
-                if isinstance(value, list):
-                    # Если список — делаем маркированный список с отступами
-                    if value:
-                        bullet_items = []
-                        for i, item in enumerate(value, 1):
-                            if item and isinstance(item, str):
-                                # Убираем номера в начале, если они есть
-                                clean_item = re.sub(r'^\d+\.\s*', '', item)
-                                bullet_items.append(f"  • {clean_item}")
-                        value = '\n'.join(bullet_items) if bullet_items else ''
-                    else:
-                        value = '  • Информация отсутствует'
-                        
-                elif isinstance(value, str):
-                    # Если строка пустая
-                    if not value.strip():
-                        value = 'Информация отсутствует'
-                
-                formatted_line = formatted_line.replace(f'{{{placeholder}}}', value)
-            
-            response_lines.append(formatted_line)
+    # Преобразуем списки в маркированные списки
+    formatted_data = {}
+    for key, value in data.items():
+        if isinstance(value, list):
+            if value:
+                bullet_items = []
+                for item in value:
+                    if item and isinstance(item, str):
+                        clean_item = re.sub(r'^\d+\.\s*', '', item)
+                        bullet_items.append(f"  • {clean_item}")
+                formatted_data[key] = '\n'.join(bullet_items)
+            else:
+                formatted_data[key] = '  • Информация отсутствует'
+        elif isinstance(value, str):
+            formatted_data[key] = value if value.strip() else 'Информация отсутствует'
         else:
-            response_lines.append(line)
+            formatted_data[key] = str(value) if value else ''
 
-    # Добавляем источники в конец, если есть и не пустые
-    #sources = data.get('sources')
-    #if sources and isinstance(sources, list) and sources:
-    #    response_lines.append("")
-    #    response_lines.append("### 🔗 Источники")
-    #    for i, src in enumerate(sources[:3], 1):
-    #        response_lines.append(f"{i}. {src}")
+    # Формируем ответ
+    lines = []
+    for line in template['structure']:
+        try:
+            lines.append(line.format(**formatted_data))
+        except KeyError as e:
+            # Если какого-то ключа нет в данных, подставляем заглушку
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Отсутствует ключ {e} в данных для шаблона {template_type}")
+            placeholder = e.args[0]
+            lines.append(line.replace(f'{{{placeholder}}}', 'Информация отсутствует'))
+        except Exception:
+            lines.append(line)  # если что-то пошло не так, просто добавляем строку как есть
 
-    return '\n'.join(response_lines)
+    return '\n'.join(lines)

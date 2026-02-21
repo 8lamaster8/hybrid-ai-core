@@ -137,21 +137,156 @@ class TextCleaner:
         return ' '.join(unique_sentences)
 
 
+import re
+from typing import Optional
+
+try:
+    from bs4 import BeautifulSoup, Comment
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
+    # Можно использовать lxml, если оно есть, но для простоты оставим заглушку
+    BeautifulSoup = None
+
+from appp.utils.text_processor import TextCleaner
+
+
 class ContentExtractor:
     """
     Извлечение основного контента из HTML.
-    (Упрощенная версия; в продакшене лучше использовать 
-    readability-lxml или аналоги)
+    Использует BeautifulSoup для парсинга и эвристики для выделения текста.
     """
-    
-    def __init__(self):
+
+    # Селекторы для удаления мусорных блоков
+    REMOVE_SELECTORS = [
+        'script', 'style', 'noscript', 'meta', 'link',
+        'nav', 'header', 'footer', 'aside',
+        '.sidebar', '#sidebar', '.comments', '#comments',
+        '.advertisement', '.ads', '.banner',
+        '.cookie-notice', '.popup', '.modal',
+        'form', 'input', 'button',
+        '.social-share', '.share-buttons',
+        '.related-posts', '.recommendations'
+    ]
+
+    # Селекторы для приоритетного контента
+    CONTENT_SELECTORS = [
+        'article',
+        'main',
+        '[role="main"]',
+        '.post-content',
+        '.entry-content',
+        '.article-content',
+        '.content-body',
+        '#content',
+        '.content'
+    ]
+
+    def __init__(self, use_readability_if_available: bool = False):
         self.text_cleaner = TextCleaner()
-    
-    def extract_from_html(self, html_content: str) -> str:
+        self.use_readability = use_readability_if_available
+
+        # Попытка импортировать readability-lxml, если запрошено
+        self.readability = None
+        if self.use_readability:
+            try:
+                from readability import Document
+                self.readability = Document
+            except ImportError:
+                pass
+
+    def extract_from_html(self, html_content: str, url: Optional[str] = None) -> str:
         """
-        Простейшее извлечение текста из HTML.
-        Реальная реализация должна использовать BeautifulSoup или lxml.
+        Извлекает основной текст из HTML.
+
+        Args:
+            html_content: Исходный HTML
+            url: URL страницы (может использоваться для улучшения извлечения)
+
+        Returns:
+            Очищенный текст
         """
-        # Это заглушка; в реальном коде используется BeautifulSoup/lxml
-        # Оставляем здесь для совместимости; настоящая логика в detective.py
-        return html_content
+        if not html_content:
+            return ""
+
+        # 1. Если включён readability и он доступен — используем его
+        if self.readability:
+            try:
+                doc = self.readability(html_content, url=url)
+                return self.text_cleaner.clean(doc.summary())
+            except Exception as e:
+                # В случае ошибки падаем на BeautifulSoup
+                pass
+
+        # 2. Используем BeautifulSoup
+        if not BS4_AVAILABLE:
+            # Крайний случай: удаляем теги простым regexp (очень грязно)
+            text = re.sub(r'<[^>]+>', ' ', html_content)
+            return self.text_cleaner.clean(text)
+
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            # Удаляем ненужные элементы
+            self._remove_unwanted(soup)
+
+            # Пытаемся найти основной контент
+            content_container = self._find_content_container(soup)
+
+            if content_container:
+                # Извлекаем текст из контейнера
+                raw_text = content_container.get_text(separator='\n', strip=True)
+            else:
+                # Если не нашли — берём весь body (без удалённых элементов)
+                body = soup.find('body')
+                if body:
+                    raw_text = body.get_text(separator='\n', strip=True)
+                else:
+                    # Если и body нет — весь суп
+                    raw_text = soup.get_text(separator='\n', strip=True)
+
+            # 3. Очистка через TextCleaner
+            cleaned = self.text_cleaner.clean(raw_text)
+            return cleaned
+
+        except Exception as e:
+            # В случае любой ошибки парсинга — падаем на простую очистку
+            text = re.sub(r'<[^>]+>', ' ', html_content)
+            return self.text_cleaner.clean(text)
+
+    def _remove_unwanted(self, soup: BeautifulSoup) -> None:
+        """Удаляет из супа мусорные элементы по селекторам."""
+        # Удаляем комментарии
+        for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+            comment.extract()
+
+        # Удаляем элементы по селекторам
+        for selector in self.REMOVE_SELECTORS:
+            for element in soup.select(selector):
+                element.decompose()
+
+        # Дополнительно: удаляем пустые элементы (опционально)
+        # for element in soup.find_all():
+        #     if not element.get_text(strip=True) and element.name not in ['br', 'hr', 'img']:
+        #         element.decompose()
+
+    def _find_content_container(self, soup: BeautifulSoup) -> Optional[BeautifulSoup]:
+        """Ищет контейнер с основным контентом по приоритетным селекторам."""
+        for selector in self.CONTENT_SELECTORS:
+            container = soup.select_one(selector)
+            if container:
+                return container
+
+        # Если не нашли по селекторам, попробуем эвристику: тег с наибольшим количеством текста
+        candidates = []
+        for tag in soup.find_all(['div', 'section', 'article']):
+            text_len = len(tag.get_text(strip=True))
+            if text_len > 200:  # Минимальный порог
+                candidates.append((text_len, tag))
+
+        if candidates:
+            # Возвращаем тег с самым длинным текстом
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            return candidates[0][1]
+
+        return None

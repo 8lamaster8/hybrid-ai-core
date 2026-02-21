@@ -35,8 +35,6 @@ from appp.core.logging import logger
 # Coordination
 from appp.coordination.service_coordinator import ServiceCoordinator, get_coordinator
 from appp.coordination.learning_coordinator import LearningCycleCoordinator, get_learning_coordinator
-from appp.utils.response_templates import RESPONSE_TEMPLATES, format_rich_response
-
 
 logger = get_logger('AutonomousAI')
 
@@ -101,7 +99,6 @@ class AutonomousAIPro:
             if not embedder_ok:
                 logger.warning("⚠️ Эмбеддинги не загружены, ChromaDB и ранжирование по эмбеддингам будут недоступны")
             else:
-                # Переназначаем глобальный embedder для RankingService и других модулей
                 global_embedder = self.embedder
                 logger.info("   ✅ Глобальный embedder переназначен")
 
@@ -204,7 +201,6 @@ class AutonomousAIPro:
                 'enable_relation_extraction': self.config.analyst.enable_relation_extraction,
                 'language': self.config.analyst.language,
                 'min_confidence': self.config.analyst.min_confidence,
-                # Добавляем параметры для ранжирования и NER
                 'enable_ner': True,
                 'priority_domains': priority_domains,
                 'low_trust_domains': low_trust_domains
@@ -243,7 +239,6 @@ class AutonomousAIPro:
             # 8. Координатор самообучения
             logger.info("8/8 🧠 Инициализация координатора самообучения...")
             if self.config.learning.enabled:
-                # Формируем словарь сервисов для циклов
                 learning_services = {
                     'detective': self.detective,
                     'committee': self.committee,
@@ -255,7 +250,6 @@ class AutonomousAIPro:
                     'embedder': self.embedder
                 }
 
-                # Конфигурация для циклов (берём из self.config.learning)
                 learning_config = {
                     'enabled': self.config.learning.enabled,
                     'check_interval': self.config.learning.check_interval,
@@ -266,13 +260,11 @@ class AutonomousAIPro:
 
                 self.learning_coordinator = LearningCycleCoordinator(learning_services, learning_config)
 
-                # Запускаем фоновую задачу
                 self.learning_task = asyncio.create_task(
                     self.learning_coordinator.start(),
                     name="learning_coordinator"
                 )
 
-                # Добавляем callback для отслеживания ошибок
                 def learning_task_done(task):
                     try:
                         task.result()
@@ -391,7 +383,6 @@ class AutonomousAIPro:
             'engram': await self.engram.get_stats() if self.engram else {},
             'embedder': await self.embedder.get_metrics() if self.embedder else {}
         }
-        # Добавляем статистику самообучения, если есть
         if self.learning_coordinator:
             status['learning'] = self.learning_coordinator.get_stats()
         return status
@@ -414,7 +405,6 @@ class AutonomousAIPro:
 
         while True:
             try:
-                # Даём небольшую паузу, чтобы фоновые задачи могли выполниться перед вводом
                 await asyncio.sleep(0.1)
                 user_input = (await self.ainput("\n🎯 > ")).strip()
 
@@ -481,29 +471,21 @@ class AutonomousAIPro:
             print(f"\n❌ Ошибка: {result['error']}")
             return
 
-        profile = result.get('profile', '')
-        key_facts_metadata = result.get('key_facts_metadata', [])
-        query = result.get('query', '')
+        print("\n" + "✅" * 40)
+        print(f"🤖 ОТВЕТ (источник: {result.get('source', 'unknown')})")
+        print("✅" * 40)
 
-        from appp.utils.response_templates import RESPONSE_TEMPLATES, format_rich_response
-
-        if profile and key_facts_metadata and profile in RESPONSE_TEMPLATES:
-            try:
-                template_data = self.analyst._prepare_template_data(profile, key_facts_metadata, query)
-                logger.info(f"PROFILE: {profile}, METADATA COUNT: {len(key_facts_metadata)}")
-                formatted = format_rich_response(profile, template_data)
-                print("\n" + "✅" * 40)
-                print(f"🤖 ОТВЕТ (источник: {result.get('source', 'unknown')})")
-                print("✅" * 40)
-                print(f"\n{formatted}\n")
-            except Exception as e:
-                logger.error(f"Ошибка шаблонного форматирования: {e}", exc_info=True)
-                self._display_fallback_answer(result)
+        if result.get('key_points'):
+            print("\n" + "\n".join(f"• {point}" for point in result['key_points'][:10]))
+        elif result.get('answer'):
+            print(f"\n{result['answer']}")
+        elif result.get('synthesis'):
+            print(f"\n{result['synthesis']}")
         else:
-            self._display_fallback_answer(result)
+            print("\nНет информации.")
 
         if 'confidence' in result:
-            print(f"📊 Уверенность: {result['confidence']:.1%}")
+            print(f"\n📊 Уверенность: {result['confidence']:.1%}")
         if 'processing_time' in result:
             print(f"⏱️  Время: {result['processing_time']:.2f} сек")
         if 'sources' in result and result['sources']:
@@ -511,13 +493,6 @@ class AutonomousAIPro:
             for i, src in enumerate(result['sources'][:3], 1):
                 print(f"   {i}. {src}")
         print("\n" + "✅" * 40)
-
-    def _display_fallback_answer(self, result: dict):
-        print("\n" + "✅" * 40)
-        print(f"🤖 ОТВЕТ (источник: {result.get('source', 'unknown')})")
-        print("✅" * 40)
-        answer = result.get('answer', result.get('synthesis', 'Нет ответа'))
-        print(f"\n{answer}\n")
 
     def _display_research(self, result: dict):
         if 'error' in result:
