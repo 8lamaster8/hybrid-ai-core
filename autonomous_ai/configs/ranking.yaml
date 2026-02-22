@@ -1,50 +1,185 @@
-profiles:
+  profiles:
+  # Базовый профиль (для всего, что не попало в другие)
   default:
     weights:
-      relevance: 0.4
-      domain_credit: 0.15
-      position: 0.1
-      ner: 0.2
+      relevance: 0.35      # чуть уменьшим, чтобы дать больше веса домену
+      domain_credit: 0.30   # увеличили с 0.20
+      position: 0.10
+      ner: 0.15
       length: 0.05
-      definition_causal: 0.1
-      uniqueness_penalty: -0.2
+      definition_causal: 0.10
+      uniqueness_penalty: -0.15
+    length_optimal: 120
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  # Короткие фактологические вопросы (кто, где, когда)
+  factoid:
+    weights:
+      ner: 0.35                # имена, даты, места очень важны # уменьшили с 0.45
+      relevance: 0.30           # семантическая близость
+      domain_credit: 0.35       # доверие к источнику # увеличили с 0.20
+      position: 0.05            # позиция почти не важна
+      length: 0.0
+      definition_causal: 0.0
+      uniqueness_penalty: -0.15
     length_optimal: 100
     length_steepness: 0.1
     ner_max_norm: 20.0
     uniqueness_threshold: 0.85
 
-  factoid:
-    weights:
-      ner: 0.4
-      relevance: 0.3
-      domain_credit: 0.2
-      position: 0.05
-      length: 0.03
-      definition_causal: 0.02
-      uniqueness_penalty: -0.15
-    # остальные параметры наследуются из default
-
+  # Вопросы "как" и "почему"
   how_why:
     weights:
-      definition_causal: 0.4
-      relevance: 0.3
-      domain_credit: 0.15
-      position: 0.1
-      ner: 0.05
+      definition_causal: 0.40   # причинно-следственные связи
+      relevance: 0.30           # релевантность
+      domain_credit: 0.20       # авторитетность
+      position: 0.10            # позиция чуть важна
+      ner: 0.0
       length: 0.0
-      uniqueness_penalty: -0.1
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
 
+  # Сравнения и оценки (лучше/хуже)
   evaluation:
     weights:
-      relevance: 0.5
-      domain_credit: 0.25
-      ner: 0.1
-      definition_causal: 0.1
+      relevance: 0.50           # главное — соответствие запросу
+      domain_credit: 0.25       # авторитетность
+      ner: 0.10                 # сущности (что сравнивают)
+      definition_causal: 0.10   # связи
       position: 0.05
       length: 0.0
-      uniqueness_penalty: -0.1
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
 
-domain_credit:
-  priority: 1.0
-  neutral: 0.6
-  low: 0.3
+  # Математические теоремы
+  mathematical_theorem:
+    weights:
+      definition_causal: 0.35   # определения
+      relevance: 0.35           # релевантность
+      domain_credit: 0.20       # авторитетность (вики, научные)
+      ner: 0.10                 # имена математиков
+      length: 0.0
+      position: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  # Научные концепции (физика, химия, биология)
+  scientific_concept:
+    weights:
+      definition_causal: 0.35
+      relevance: 0.35
+      domain_credit: 0.20
+      ner: 0.10
+      length: 0.0
+      position: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  # Квантовая физика (глубокие вопросы)
+  quantum_physics_deep:
+    weights:
+      definition_causal: 0.35
+      relevance: 0.35
+      domain_credit: 0.20
+      ner: 0.10
+      length: 0.0
+      position: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  # Философские концепции
+  philosophical_concept:
+    weights:
+      definition_causal: 0.40
+      relevance: 0.30
+      domain_credit: 0.20
+      ner: 0.10
+      length: 0.0
+      position: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  # Биологические системы
+  biological_system:
+  weights:
+    definition_causal: 0.40    # важны определения и причинно-следственные связи
+    relevance: 0.30
+    domain_credit: 0.20
+    ner: 0.10                  # биологические термины
+    length: 0.0
+    position: 0.0
+    uniqueness_penalty: -0.10
+  length_optimal: 150
+  length_steepness: 0.08
+  ner_max_norm: 20.0
+  uniqueness_threshold: 0.85
+
+  # Программирование и IT
+  programming_concept:
+    weights:
+      definition_causal: 0.30
+      relevance: 0.40
+      domain_credit: 0.20
+      ner: 0.10
+      length: 0.0
+      position: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 120
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  ai_concept:
+    weights:
+      definition_causal: 0.30   # определения
+      relevance: 0.35            # семантика
+      domain_credit: 0.20        # авторитетность
+      ner: 0.15                  # термины (AI, нейросеть, GPT)
+      length: 0.0
+      position: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 120
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+  # Исторические события
+  historical_event:
+    weights:
+      ner: 0.35                 # имена, даты, места
+      relevance: 0.30
+      domain_credit: 0.20
+      position: 0.10            # начало документа важно
+      definition_causal: 0.05
+      length: 0.0
+      uniqueness_penalty: -0.10
+    length_optimal: 150
+    length_steepness: 0.08
+    ner_max_norm: 20.0
+    uniqueness_threshold: 0.85
+
+
+  domain_credit:
+    priority: 1.5
+    neutral: 0.6
+    low: 0.3

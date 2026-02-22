@@ -96,7 +96,6 @@ class KnowledgeAnalyst:
             },
             'regex_patterns': {}
         }
-        # Поднимаемся на 4 уровня вверх от текущего файла (appp/services/analyst/knowledge_analyst.py -> корень)
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         config_path = os.path.join(base_dir, 'configs', 'profiles.yaml')
         if os.path.exists(config_path):
@@ -151,12 +150,11 @@ class KnowledgeAnalyst:
             else:
                 combined = pattern_list
             patterns.append((profile, combined))
-        # Добавляем default на всякий случай
         patterns.append(('default', '.*'))
         return patterns
 
     async def initialize(self):
-        """Асинхронная инициализация (ничего не делаем)."""
+        """Асинхронная инициализация."""
         return True
 
     # ----------------------------------------------------------------------
@@ -167,7 +165,6 @@ class KnowledgeAnalyst:
         if not self.ner_enabled:
             return None
         try:
-            # Собираем все возможные метки из ner_competencies и base_mapping
             all_labels = list(self.base_mapping.keys())
             for prof in self.ner_competencies.values():
                 all_labels.extend(prof['labels'])
@@ -177,7 +174,6 @@ class KnowledgeAnalyst:
                 self.gliner_model.extract_entities, query, all_labels, threshold=0.5
             )
 
-            # Считаем взвешенную сумму для каждого профиля
             profile_scores = {p: 0.0 for p in self.ner_competencies}
             for ent in entities:
                 label = ent['label']
@@ -188,7 +184,7 @@ class KnowledgeAnalyst:
             
             if profile_scores:
                 best = max(profile_scores, key=profile_scores.get)
-                if profile_scores[best] > 5.0:  # порог
+                if profile_scores[best] > 5.0:
                     logger.debug(f"NER запроса выбрал профиль {best} со счётом {profile_scores[best]:.1f}")
                     return best
         except Exception as e:
@@ -217,6 +213,7 @@ class KnowledgeAnalyst:
         """
         Анализ документов: извлечение чанков, фактов, ранжирование, дедупликация.
         Возвращает структуру с ключами: success, summary, key_points, key_facts_metadata, profile, query, confidence, ...
+        Количество key_points динамическое: от 2 до 20, в зависимости от качества.
         """
         start_time = datetime.now()
         profile_name = await self.detect_profile(query)
@@ -249,7 +246,7 @@ class KnowledgeAnalyst:
                 fact_objects = await self._semantic_deduplication(fact_objects, threshold=0.85)
                 logger.info(f"   ✅ После семантической дедупликации: {len(fact_objects)} фактов")
 
-            # 4. Ранжирование
+            # 4. Ранжирование и динамический отбор
             top_facts = []
             key_points = []
             if fact_objects:
@@ -279,12 +276,25 @@ class KnowledgeAnalyst:
                 logger.info(f"   ✅ Ранжирование завершено, фактов после ранга: {len(ranked)}")
 
                 if ranked:
-                    logger.info(f"   🔍 Пример факта: {ranked[0][0].text[:100]}...")
+                    scores = [score for _, score in ranked]
+                    max_score = max(scores)
+                    threshold = max_score * 0.6  # порог 60%
+
+                    filtered = [(fact, score) for fact, score in ranked if score >= threshold]
+                    if len(filtered) < 2:
+                        filtered = ranked[:2]
+                    if len(filtered) > 20:
+                        filtered = filtered[:20]
+
+                    top_facts = [fact for fact, _ in filtered]
+                    key_points = [fact.text for fact in top_facts]
+
+                    logger.info(f"   🔍 Динамический отбор: исходно {len(ranked)}, после порога {len(filtered)}")
+                    if filtered:
+                        logger.info(f"   🔍 Пример факта: {filtered[0][0].text[:100]}... (оценка {filtered[0][1]:.2f})")
                 else:
                     logger.info("   🔍 ranked пуст")
 
-                top_facts = [fact for fact, score in ranked[:15]]
-                key_points = [fact.text for fact in top_facts]
                 self._last_facts_metadata = top_facts[:15] if top_facts else []
             else:
                 logger.info("   🔍 Нет фактов для ранжирования")
@@ -309,7 +319,7 @@ class KnowledgeAnalyst:
                 'success': True,
                 'documents_count': len(documents),
                 'summary': summary,
-                'key_points': key_points[:15],
+                'key_points': key_points,
                 'key_facts_metadata': top_facts[:15] if top_facts else [],
                 'profile': profile_name,
                 'query': query,
@@ -332,45 +342,113 @@ class KnowledgeAnalyst:
     # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
     # ----------------------------------------------------------------------
     async def _extract_key_facts(self, chunks, query, top_k=50, is_discovery=False):
-        """Извлекает факты из чанков с фильтрацией по junk_phrases."""
+        """Извлекает факты из чанков с улучшенной фильтрацией и оценкой."""
         if not chunks:
             return []
+        
+        # Ключевые слова из запроса
+        keywords = [w.lower() for w in re.findall(r'\b\w{4,}\b', query) 
+                    if w.lower() not in {'когда','что','как','где','почему','зачем','какой','какая','какие','кто'}]
+        
         all_facts = []
-        junk_phrases = self.junk_phrases  # используем загруженные из quality.yaml
-
+        junk_phrases = self.junk_phrases
+        ad_indicators = self.ad_indicators
+        
         for chunk in chunks:
             text = chunk.get('text', '')
             if not text:
                 continue
+            
             sentences = re.split(r'(?<=[.!?])\s+', text)
+            source_url = chunk.get('source_url', '')
+            domain = self._extract_domain(source_url)
+            position_ratio = chunk.get('position_ratio', 0.5)
+            
             for sent in sentences:
                 sent = sent.strip()
-                if len(sent) < 10:
-                    continue
                 sent_lower = sent.lower()
-                # Проверка на мусорные фразы
+                
+                # Длина
+                if len(sent) < 40 or len(sent) > 600:
+                    continue
+                
+                # Мусорные фразы
                 if any(phrase in sent_lower for phrase in junk_phrases):
+                    continue
+                if any(ad in sent_lower for ad in ad_indicators):
                     continue
                 if re.search(r'https?://|www\.', sent):
                     continue
+                if sent.count('!') > 2:
+                    continue
+                
+                # Доля заглавных букв
+                words = sent.split()
+                if len(words) >= 3:
+                    capitalized = sum(1 for w in words[1:] if w and w[0].isupper())
+                    if capitalized / max(len(words)-1, 1) > 0.4:
+                        continue
+                
+                # Доля стоп-слов
+                stop_words = {'в', 'на', 'с', 'со', 'к', 'по', 'из', 'за', 'у', 'от', 'до', 'для', 'о', 'об', 'под', 'над', 'перед', 'через', 'и', 'а', 'но', 'да', 'или', 'либо', 'то', 'как', 'так', 'что', 'чтобы', 'если', 'потому', 'поэтому'}
+                word_count = len(words)
+                if word_count > 0:
+                    stop_count = sum(1 for w in words if w.lower() in stop_words)
+                    stop_ratio = stop_count / word_count
+                    if stop_ratio > 0.6:
+                        continue
+                
+                # Проверка на вопросительные заголовки
+                question_words = {'когда', 'где', 'почему', 'зачем', 'как', 'что', 'кто'}
+                first_word = sent_lower.split()[0] if sent_lower.split() else ''
+                if first_word in question_words and len(sent) < 100:
+                    if any(kw in sent_lower for kw in keywords):
+                        continue
+                
+                # Базовая оценка
+                base_score = 0.0
+                for kw in keywords:
+                    if kw in sent_lower:
+                        base_score += 1.0
+                
+                position_bonus = 1.0 - position_ratio
+                length_score = 0.5 if 80 <= len(sent) <= 250 else 0.3 if 250 < len(sent) <= 400 else 0.0
+                digit_bonus = 0.5 if re.search(r'\b\d+\b', sent) else 0.0
+                date_bonus = 0.5 if re.search(r'\b\d{4}\b', sent) or re.search(r'\bмлн лет\b', sent_lower) else 0.0
+                def_bonus = 0.3 if re.search(r'—| это | является |определяет', sent_lower) else 0.0
+                
+                total_score = base_score + position_bonus + length_score + digit_bonus + date_bonus + def_bonus
+
+                # Бонусы за домены
+                if domain in self.priority_domains:
+                    total_score *= 1.2
+                elif domain in self.low_trust_domains:
+                    total_score *= 0.5
+                
                 all_facts.append({
                     'text': sent,
-                    'domain': self._extract_domain(chunk.get('source_url', '')),
-                    'source_url': chunk.get('source_url', ''),
-                    'position_ratio': 0.5,
+                    'domain': domain,
+                    'source_url': source_url,
+                    'position_ratio': position_ratio,
                     'ner_score': 0.0,
                     'ner_types': [],
                     'length': len(sent),
-                    'contains_definition': False,
-                    'contains_causal': False,
-                    'base_score': 1.0,
-                    'total_score': 1.0,
+                    'contains_definition': bool(re.search(r'—| это | является |определяет', sent_lower)),
+                    'contains_causal': bool(re.search(r'потому что|так как|следовательно|поэтому|из-за|вследствие', sent_lower)),
+                    'base_score': base_score,
+                    'position_bonus': position_bonus,
+                    'digit_bonus': digit_bonus,
+                    'date_bonus': date_bonus,
+                    'def_bonus': def_bonus,
+                    'total_score': total_score,
                     'chunk_id': ''
                 })
-        return all_facts[:top_k]
+        
+        unique = self._deduplicate_facts_by_text(all_facts)
+        unique.sort(key=lambda x: x['total_score'], reverse=True)
+        return unique[:top_k]
 
     async def _semantic_deduplication(self, facts: List[Dict], threshold: float = 0.85) -> List[Dict]:
-        """Удаляет семантические дубликаты."""
         if len(facts) < 2:
             return facts
         try:

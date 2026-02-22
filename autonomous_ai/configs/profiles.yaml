@@ -43,6 +43,18 @@ profiles:
       - "Library"
     weight: 11.0
 
+  ai_concept:
+    labels:
+      - "Artificial Intelligence"
+      - "Machine Learning"
+      - "Neural Network"
+      - "AGI"
+      - "RAG"
+      - "LLM"
+      - "GPT"
+      - "Transformer"
+    weight: 12.0
+
 # Базовые сущности (всегда используются)
 base_mapping:
   person: 10.0
@@ -77,3 +89,5 @@ regex_patterns:
     - "\\bкак\\b|\\bпочему\\b|\\bзачем\\b|\\bпричина\\b"
   evaluation:
     - "\\bлучше\\b|\\bхуже\\b|\\bстоит ли\\b|\\bсравнить\\b|\\bотличие\\b"
+  ai_concept:
+  - "искусственный интеллект|нейросет|машинн[оа]е обучени|гпт|чатгпт|agi|rag|трансформер|llm|ml|ai"
